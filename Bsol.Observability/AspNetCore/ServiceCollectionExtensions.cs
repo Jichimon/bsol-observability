@@ -1,4 +1,6 @@
 ﻿using System;
+using Bsol.Observability.Utils;
+
 #if NET8_0
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
@@ -21,10 +23,13 @@ namespace Bsol.Observability.AspNetCore
             IConfiguration configuration,
             Action<ObservabilityOptions>? configureOptions = null)
         {
-            Console.WriteLine("🔍 [DEBUG] AddBsolObservability method starting...");
-
             var options = configuration.GetObservabilityOptions();
-            Console.WriteLine($"🔍 [DEBUG] Options loaded: ServiceName='{options.ServiceName}', Endpoint='{options.TempoEndpoint}'");
+
+            ObservabilityLogging.EnableDebugLogging = options.EnableDebugLogging;
+
+            ObservabilityLogging.Debug("🔍 [TRACING CONFIG] ConfigureStandardTracing method STARTED!");
+            ObservabilityLogging.Debug($"🔍 [TRACING CONFIG] Service: {options.ServiceName}");
+            ObservabilityLogging.Debug($"🔍 [TRACING CONFIG] Endpoint: {options.TempoUrl}");
 
             configureOptions?.Invoke(options);
 
@@ -33,7 +38,7 @@ namespace Bsol.Observability.AspNetCore
                 opt.ServiceName = options.ServiceName;
                 opt.ServiceVersion = options.ServiceVersion;
                 opt.Environment = options.Environment;
-                opt.TempoEndpoint = options.TempoEndpoint;
+                opt.TempoUrl = options.TempoUrl;
                 opt.SamplingRatio = options.SamplingRatio;
                 opt.EnableSqlInstrumentation = options.EnableSqlInstrumentation;
                 opt.EnableHttpClientInstrumentation = options.EnableHttpClientInstrumentation;
@@ -43,14 +48,12 @@ namespace Bsol.Observability.AspNetCore
                 opt.ResourceAttributes = options.ResourceAttributes;
             });
 
-            Console.WriteLine("🔍 [DEBUG] About to configure OpenTelemetry...");
-
             services.AddOpenTelemetry()
                 .WithTracing(tracing => tracing
                     .ConfigureStandardTracing(options)
                     .AddAspNetCoreInstrumentation(aspnet =>
                     {
-                        aspnet.Filter = context => FilterHttpCalls(context, options);
+                        aspnet.Filter = context => TracingFilters.FilterAspNetCoreHttpCalls(context, options);
                         aspnet.RecordException = true;
                         aspnet.EnrichWithHttpRequest = EnrichWithHttpRequest;
                         aspnet.EnrichWithHttpResponse = EnrichWithHttpResponse;
@@ -61,23 +64,27 @@ namespace Bsol.Observability.AspNetCore
                     .AddMeter(Metrics.Meter.Name)
                     .AddOtlpExporter(otlp =>
                     {
-                        otlp.Endpoint = new Uri(options.TempoEndpoint);
+                        var baseUri = new Uri(options.TempoUrl).GetLeftPart(UriPartial.Authority);
+                        otlp.Endpoint = new Uri($"{baseUri}/v1/metrics");
                         otlp.TimeoutMilliseconds = options.TimeoutMilliseconds;
                         switch (options.Protocol)
                         {
                             case OtlpProtocol.Grpc:
+                                var uri = new Uri(baseUri);
+                                var builder = new UriBuilder() { Port = 4317 };
                                 otlp.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.Grpc;
-                                Console.WriteLine("[METRICS CONFIG]   Using gRPC protocol");
+                                otlp.Endpoint = new Uri($"{uri}/v1/metrics");
+                                ObservabilityLogging.Debug("[METRICS CONFIG]   Using gRPC protocol");
                                 break;
 
                             case OtlpProtocol.HttpProtobuf:
                                 otlp.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
-                                Console.WriteLine("[METRICS CONFIG]   Using HTTP/Protobuf protocol");
+                                ObservabilityLogging.Debug("[METRICS CONFIG]   Using HTTP/Protobuf protocol");
                                 break;
 
                             default:
                                 otlp.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
-                                Console.WriteLine("[METRICS CONFIG]   Using default HTTP/Protobuf protocol");
+                                ObservabilityLogging.Debug("[METRICS CONFIG]   Using default HTTP/Protobuf protocol");
                                 break;
                         }
 
@@ -102,7 +109,7 @@ namespace Bsol.Observability.AspNetCore
                 services.TryDecorate(typeof(ILogger<>), typeof(TracingLoggerDecorator<>));
             }
 
-            Console.WriteLine("🔍 [DEBUG] OpenTelemetry configuration completed");
+            ObservabilityLogging.Debug("🔍 [DEBUG] OpenTelemetry configuration completed");
             return services;
         }
 
@@ -132,27 +139,6 @@ namespace Bsol.Observability.AspNetCore
         {
             activity.SetTag("http.response.size", httpResponse.ContentLength);
             activity.SetTag("http.response.content_type", httpResponse.ContentType);
-        }
-
-        private static bool FilterHttpCalls(Microsoft.AspNetCore.Http.HttpContext httpContext, ObservabilityOptions options)
-        {
-            var path = httpContext.Request.Path.Value?.ToLower() ?? "";
-            var method = httpContext.Request.Method;
-
-            var excludedPaths = new[]
-            {
-                "/health", "/metrics", "/swagger", "/favicon",
-                "/_framework", "/css", "/js", "/lib"
-            };
-
-            if (path == "/" || excludedPaths.Any(excluded => path.Contains(excluded)))
-            {
-                Console.WriteLine($"🚫 [FILTER] Excluding: {method} {path}");
-                return false;
-            }
-
-            Console.WriteLine($"🚫 [FILTER] Including API: {method} {path}");
-            return true;
         }
     }
 }

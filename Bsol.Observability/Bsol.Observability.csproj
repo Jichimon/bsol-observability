@@ -6,7 +6,7 @@
 	  <Nullable>enable</Nullable>
 
 	  <PackageId>Bsol.Observability</PackageId>
-	  <Version>1.0.7</Version>
+	  <Version>1.0.92</Version>
 	  <Authors>Luis Octavio Antelo Mansilla</Authors>
 	  <Company>Banco Solidario SA</Company>
 	  <Description>Biblioteca de observabilidad no invasiva con OpenTelemetry y Tempo</Description>
@@ -32,15 +32,15 @@
 	<!-- Dependencias específicas para .NET 8 -->
 	<ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
 		<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="[1.9.0,)" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="[8.0.0,)" >
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="[8.0.0,)">
 			<PrivateAssets>compile</PrivateAssets>
 			<IncludeAssets>compile</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="[8.0.0,)" >
+		<PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="[8.0.0,)">
 			<PrivateAssets>compile</PrivateAssets>
 			<IncludeAssets>compile</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="[2.3.0,)" >
+		<PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="[2.3.0,)">
 			<PrivateAssets>compile</PrivateAssets>
 			<IncludeAssets>compile</IncludeAssets>
 		</PackageReference>

@@ -27,18 +27,18 @@ namespace Bsol.Observability.AspNetCore
             var incomingSpanId = context.Request.Headers["X-Span-Id"].FirstOrDefault();
             var incomingCorrelationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault();
 
-            Console.WriteLine($"🔍 AutoTracingMiddleware: Processing {context.Request.Method} {context.Request.Path}");
-            Console.WriteLine($"🔍 ActivitySource: {_activitySource.Name} v{_activitySource.Version}");
+            ObservabilityLogging.Debug($"🔍 AutoTracingMiddleware: Processing {context.Request.Method} {context.Request.Path}");
+            ObservabilityLogging.Debug($"🔍 ActivitySource: {_activitySource.Name} v{_activitySource.Version}");
 
             using var activity = _activitySource.StartActivity($"{context.Request.Method} {context.Request.Path}");
 
             if (activity != null)
             {
-                Console.WriteLine($"🔍 Activity created: {activity.TraceId} - {activity.SpanId}");
+                ObservabilityLogging.Debug($"🔍 Activity created: {activity.TraceId} - {activity.SpanId}");
             }
             else
             {
-                Console.WriteLine($"🔴 Activity NOT created - possible ActivitySource issue");
+                ObservabilityLogging.Debug($"🔴 Activity NOT created - possible ActivitySource issue");
             }
 
             if (!string.IsNullOrEmpty(incomingTraceId) && activity != null)

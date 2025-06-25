@@ -15,7 +15,7 @@ namespace Bsol.Observability.Configuration
                 throw new InvalidOperationException("ServiceName es requerido en la configuración del paquete Observability");
             }
 
-            if (!Uri.TryCreate(options.TempoEndpoint, UriKind.Absolute, out _))
+            if (!Uri.TryCreate(options.TempoUrl, UriKind.Absolute, out _))
             {
                 throw new InvalidOperationException("TempoEndpoint debe ser una URL válida");
             }

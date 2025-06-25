@@ -1,4 +1,5 @@
 ﻿using Bsol.Observability.Configuration;
+using Bsol.Observability.Utils;
 using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -17,9 +18,9 @@ namespace Bsol.Observability.Core
             ObservabilityOptions options)
         {
 
-            Console.WriteLine("🔍 [TRACING CONFIG] ConfigureStandardTracing method STARTED!");
-            Console.WriteLine($"🔍 [TRACING CONFIG] Service: {options.ServiceName}");
-            Console.WriteLine($"🔍 [TRACING CONFIG] Endpoint: {options.TempoEndpoint}");
+            ObservabilityLogging.Debug("🔍 [TRACING CONFIG] ConfigureStandardTracing method STARTED!");
+            ObservabilityLogging.Debug($"🔍 [TRACING CONFIG] Service: {options.ServiceName}");
+            ObservabilityLogging.Debug($"🔍 [TRACING CONFIG] Endpoint: {options.TempoUrl}");
 
             var resourceBuilder = ResourceBuilder.CreateDefault()
                 .AddService(options.ServiceName, options.ServiceVersion)
@@ -46,7 +47,8 @@ namespace Bsol.Observability.Core
             {
                 builder.AddHttpClientInstrumentation(http =>
                 {
-                    http.FilterHttpWebRequest = FilterHttpWebRequest;
+                    http.FilterHttpWebRequest = httpWebRequest => TracingFilters.FilterHttpWebRequest(httpWebRequest, options);
+                    http.FilterHttpRequestMessage = httpRequestMessage => TracingFilters.FilterHttpRequestMessage(httpRequestMessage, options);
                     http.EnrichWithHttpRequestMessage = (activity, request) =>
                     {
                         var correlationId = Activity.Current?.GetTagItem("correlation.id")?.ToString();
@@ -79,32 +81,32 @@ namespace Bsol.Observability.Core
 
             try
             {
-                var endpoint = new Uri(options.TempoEndpoint);
-                Console.WriteLine($"🔍[TRACING CONFIG] Configuring OTLP Exporter:");
-                Console.WriteLine($"[TRACING CONFIG]   Endpoint: {endpoint}");
-                Console.WriteLine($"[TRACING CONFIG]   Scheme: {endpoint.Scheme}");
-                Console.WriteLine($"[TRACING CONFIG]   Host: {endpoint.Host}");
-                Console.WriteLine($"[TRACING CONFIG]   Port: {endpoint.Port}");
+                var endpoint = new Uri(options.TempoUrl);
+                ObservabilityLogging.Debug($"🔍[TRACING CONFIG] Configuring OTLP Exporter:");
+                ObservabilityLogging.Debug($"[TRACING CONFIG]   Endpoint: {endpoint}");
+                ObservabilityLogging.Debug($"[TRACING CONFIG]   Scheme: {endpoint.Scheme}");
+                ObservabilityLogging.Debug($"[TRACING CONFIG]   Host: {endpoint.Host}");
+                ObservabilityLogging.Debug($"[TRACING CONFIG]   Port: {endpoint.Port}");
 
                 builder.AddOtlpExporter(otlp =>
                 {
-                    otlp.Endpoint = new Uri(options.TempoEndpoint);
+                    otlp.Endpoint = new Uri($"{options.TempoUrl}/v1/traces");
                     otlp.TimeoutMilliseconds = options.TimeoutMilliseconds;
                     switch (options.Protocol)
                     {
                         case OtlpProtocol.Grpc:
                             otlp.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.Grpc;
-                            Console.WriteLine("[TRACING CONFIG]   Using gRPC protocol");
+                            ObservabilityLogging.Debug("[TRACING CONFIG]   Using gRPC protocol");
                             break;
 
                         case OtlpProtocol.HttpProtobuf:
                             otlp.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
-                            Console.WriteLine("[TRACING CONFIG]   Using HTTP/Protobuf protocol");
+                            ObservabilityLogging.Debug("[TRACING CONFIG]   Using HTTP/Protobuf protocol");
                             break;
 
                         default:
                             otlp.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
-                            Console.WriteLine("[TRACING CONFIG]   Using default HTTP/Protobuf protocol");
+                            ObservabilityLogging.Debug("[TRACING CONFIG]   Using default HTTP/Protobuf protocol");
                             break;
                     }
 
@@ -121,52 +123,32 @@ namespace Bsol.Observability.Core
                         MaxExportBatchSize = 10
                     };
 
-                    Console.WriteLine($"🔍[TRACING CONFIG] OTLP Batch Options:");
-                    Console.WriteLine($"[TRACING CONFIG]   Max Queue Size: {otlp.BatchExportProcessorOptions.MaxQueueSize}");
-                    Console.WriteLine($"[TRACING CONFIG]   Scheduled Delay: {otlp.BatchExportProcessorOptions.ScheduledDelayMilliseconds}ms");
-                    Console.WriteLine($"[TRACING CONFIG]   Export Timeout: {otlp.BatchExportProcessorOptions.ExporterTimeoutMilliseconds}ms");
-                    Console.WriteLine($"[TRACING CONFIG]   Max Batch Size: {otlp.BatchExportProcessorOptions.MaxExportBatchSize}");
+                    ObservabilityLogging.Debug($"🔍[TRACING CONFIG] OTLP Batch Options:");
+                    ObservabilityLogging.Debug($"[TRACING CONFIG]   Max Queue Size: {otlp.BatchExportProcessorOptions.MaxQueueSize}");
+                    ObservabilityLogging.Debug($"[TRACING CONFIG]   Scheduled Delay: {otlp.BatchExportProcessorOptions.ScheduledDelayMilliseconds}ms");
+                    ObservabilityLogging.Debug($"[TRACING CONFIG]   Export Timeout: {otlp.BatchExportProcessorOptions.ExporterTimeoutMilliseconds}ms");
+                    ObservabilityLogging.Debug($"[TRACING CONFIG]   Max Batch Size: {otlp.BatchExportProcessorOptions.MaxExportBatchSize}");
                 });
 
-                Console.WriteLine("[TRACING CONFIG] ✅ OTLP Exporter configured successfully");
+                ObservabilityLogging.Debug("[TRACING CONFIG] ✅ OTLP Exporter configured successfully");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"🔴[TRACING CONFIG]  OTLP Exporter configuration failed: {ex.Message}");
-                Console.WriteLine($"🔴[TRACING CONFIG]  Exception details: {ex}");
+                ObservabilityLogging.Debug($"🔴[TRACING CONFIG]  OTLP Exporter configuration failed: {ex.Message}");
+                ObservabilityLogging.Debug($"🔴[TRACING CONFIG]  Exception details: {ex}");
             }
+
+            var excludePatterns = TracingFilters.GetAllExcludePatterns(options);
 
             if (options.EnableConsoleExporter)
             {
-                builder.AddProcessor(new DetailedDebuggingActivityProcessor());
-                Console.WriteLine("[TRACING CONFIG] ✅ Console Exporter enabled for comparison");
+                builder.AddProcessor(new DetailedDebuggingActivityProcessor(excludePatterns));
+                ObservabilityLogging.Debug("[TRACING CONFIG] ✅ Console Exporter enabled for comparison");
             }
 
-            builder.AddProcessor(new ExportInterceptorProcessor());
+            builder.AddProcessor(new ExportInterceptorProcessor(excludePatterns));
 
             return builder;
-        }
-
-        private static bool FilterHttpWebRequest(System.Net.HttpWebRequest request)
-        {
-            var uri = request.RequestUri?.ToString() ?? "";
-
-            // Excluir telemetría y monitoreo
-            var excludedHosts = new[]
-            {
-                    "applicationinsights",
-                    "4318", // Tempo
-                    "4317", // Tempo gRPC
-                    "metadata.google.internal", // GCP metadata
-                    "169.254.169.254" // AWS metadata
-                };
-
-            if (excludedHosts.Any(host => uri.Contains(host)))
-            {
-                return false;
-            }
-
-            return true;
         }
     }
 
@@ -205,63 +187,90 @@ namespace Bsol.Observability.Core
     internal class ExportInterceptorProcessor : BaseProcessor<Activity>
     {
         private static int _processedCount = 0;
+        private readonly List<string> _excludePatterns;
+
+        public ExportInterceptorProcessor(List<string> excludePatterns)
+        {
+            _excludePatterns = excludePatterns;
+        }
 
         public override void OnEnd(Activity activity)
         {
             Interlocked.Increment(ref _processedCount);
 
-            Console.WriteLine($"🔍 [PROCESSOR] Activity ending (#{_processedCount}):");
-            Console.WriteLine($"   TraceId: {activity.TraceId}");
-            Console.WriteLine($"   SpanId: {activity.SpanId}");
-            Console.WriteLine($"   Name: {activity.DisplayName}");
-            Console.WriteLine($"   Duration: {activity.Duration.TotalMilliseconds}ms");
-            Console.WriteLine($"   Status: {activity.Status}");
-            Console.WriteLine($"   Tags: {activity.Tags.Count()}");
+            var activityUrl = activity.GetTagItem("url.full")?.ToString() ?? "N/A";
+            if (_excludePatterns.Any(pattern => activityUrl.Contains(pattern)))
+            {
+                ObservabilityLogging.Debug($"🚫 [DETAILED DEBUG] Excluding activity: {activityUrl}");
+                return;
+            }
+
+            ObservabilityLogging.Debug($"🔍 [PROCESSOR] Activity ending (#{_processedCount}):");
+            ObservabilityLogging.Debug($"   TraceId: {activity.TraceId}");
+            ObservabilityLogging.Debug($"   SpanId: {activity.SpanId}");
+            ObservabilityLogging.Debug($"   Name: {activity.DisplayName}");
+            ObservabilityLogging.Debug($"   Duration: {activity.Duration.TotalMilliseconds}ms");
+            ObservabilityLogging.Debug($"   Status: {activity.Status}");
+            ObservabilityLogging.Debug($"   Tags: {activity.Tags.Count()}");
 
             foreach (var tag in activity.Tags.Take(3)) // Limita para no saturar
             {
-                Console.WriteLine($"     {tag.Key}: {tag.Value}");
+                ObservabilityLogging.Debug($"     {tag.Key}: {tag.Value}");
             }
 
-            Console.WriteLine($"   ✅ Activity will be sent to exporters");
+            ObservabilityLogging.Debug($"   ✅ Activity will be sent to exporters");
         }
     }
 
     internal class DetailedDebuggingActivityProcessor : BaseProcessor<Activity>
     {
+        private readonly List<string> _excludePatterns;
+
+        public DetailedDebuggingActivityProcessor(List<string> excludePatterns)
+        {
+            _excludePatterns = excludePatterns;
+        }
+
         public override void OnEnd(Activity activity)
         {
+            var activityUrl = activity.GetTagItem("url.full")?.ToString() ?? "N/A";
+            if (_excludePatterns.Any(pattern => activityUrl.Contains(pattern)))
+            {
+                ObservabilityLogging.Debug($"🚫 [DETAILED DEBUG] Excluding activity: {activityUrl}");
+                return;
+            }
+
             var correlationId = activity.GetTagItem("correlation.id")?.ToString() ?? "N/A";
             var serviceName = activity.GetTagItem("service.name")?.ToString() ?? "Unknown";
 
-            Console.WriteLine($"🔍 [DETAILED DEBUG] Activity Details:");
-            Console.WriteLine($"   Service: {serviceName}");
-            Console.WriteLine($"   TraceId: {activity.TraceId}");
-            Console.WriteLine($"   SpanId: {activity.SpanId}");
-            Console.WriteLine($"   ParentSpanId: {activity.ParentSpanId}");
-            Console.WriteLine($"   CorrelationId: {correlationId}");
-            Console.WriteLine($"   Name: {activity.DisplayName}");
-            Console.WriteLine($"   Kind: {activity.Kind}");
-            Console.WriteLine($"   Status: {activity.Status}");
-            Console.WriteLine($"   Start: {activity.StartTimeUtc:yyyy-MM-dd HH:mm:ss.fff}");
-            Console.WriteLine($"   Duration: {activity.Duration.TotalMilliseconds}ms");
-            Console.WriteLine($"   Source: {activity.Source.Name} v{activity.Source.Version}");
+            ObservabilityLogging.Debug($"🔍 [DETAILED DEBUG] Activity Details:");
+            ObservabilityLogging.Debug($"   Service: {serviceName}");
+            ObservabilityLogging.Debug($"   TraceId: {activity.TraceId}");
+            ObservabilityLogging.Debug($"   SpanId: {activity.SpanId}");
+            ObservabilityLogging.Debug($"   ParentSpanId: {activity.ParentSpanId}");
+            ObservabilityLogging.Debug($"   CorrelationId: {correlationId}");
+            ObservabilityLogging.Debug($"   Name: {activity.DisplayName}");
+            ObservabilityLogging.Debug($"   Kind: {activity.Kind}");
+            ObservabilityLogging.Debug($"   Status: {activity.Status}");
+            ObservabilityLogging.Debug($"   Start: {activity.StartTimeUtc:yyyy-MM-dd HH:mm:ss.fff}");
+            ObservabilityLogging.Debug($"   Duration: {activity.Duration.TotalMilliseconds}ms");
+            ObservabilityLogging.Debug($"   Source: {activity.Source.Name} v{activity.Source.Version}");
 
             if (activity.Tags.Any())
             {
-                Console.WriteLine($"   Tags ({activity.Tags.Count()}):");
+                ObservabilityLogging.Debug($"   Tags ({activity.Tags.Count()}):");
                 foreach (var tag in activity.Tags.Take(5)) // Limita para no saturar
                 {
-                    Console.WriteLine($"     {tag.Key}: {tag.Value}");
+                    ObservabilityLogging.Debug($"     {tag.Key}: {tag.Value}");
                 }
             }
 
             if (activity.Events.Any())
             {
-                Console.WriteLine($"   Events ({activity.Events.Count()}):");
+                ObservabilityLogging.Debug($"   Events ({activity.Events.Count()}):");
                 foreach (var evt in activity.Events.Take(3))
                 {
-                    Console.WriteLine($"     {evt.Name} at {evt.Timestamp}");
+                    ObservabilityLogging.Debug($"     {evt.Name} at {evt.Timestamp}");
                 }
             }
         }
